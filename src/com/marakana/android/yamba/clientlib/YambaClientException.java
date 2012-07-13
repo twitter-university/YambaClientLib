@@ -1,7 +1,7 @@
 
 package com.marakana.android.yamba.clientlib;
 
-public class YambaClientException extends RuntimeException {
+public class YambaClientException extends Exception {
 
     private static final long serialVersionUID = 727445951100074291L;
 
