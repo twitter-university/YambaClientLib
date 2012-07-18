@@ -1,3 +1,4 @@
+
 package com.marakana.android.yamba.clientlib;
 
 import java.io.IOException;
@@ -35,7 +36,6 @@ import org.xmlpull.v1.XmlPullParserFactory;
 
 import android.text.TextUtils;
 import android.util.Log;
-
 
 /**
  * YambaClient
@@ -102,7 +102,6 @@ public final class YambaClient {
         public String getMessage() { return message; }
     }
 
-
     private final String username;
     private final String password;
     private final String apiRoot;
@@ -128,21 +127,24 @@ public final class YambaClient {
      */
     public YambaClient(String username, String password, String apiRoot) {
         if (TextUtils.isEmpty(username)) {
-            throw new IllegalArgumentException("Username must not be blank"); }
+            throw new IllegalArgumentException("Username must not be blank");
+        }
         this.username = username;
 
         if (TextUtils.isEmpty(password)) {
-            throw new IllegalArgumentException("Password must not be blank"); }
+            throw new IllegalArgumentException("Password must not be blank");
+        }
         this.password = password;
 
-        if (TextUtils.isEmpty(apiRoot)) { apiRoot = DEFAULT_API_ROOT; }
+        if (TextUtils.isEmpty(apiRoot)) {
+            apiRoot = DEFAULT_API_ROOT;
+        }
         try {
             URL url = new URL(apiRoot);
             this.apiRoot = apiRoot;
             this.apiRootHost = url.getHost();
             this.apiRootPort = url.getPort();
-        }
-        catch (MalformedURLException e) {
+        } catch (MalformedURLException e) {
             throw new IllegalArgumentException("Invalid API Root: " + apiRoot);
         }
     }
@@ -166,36 +168,34 @@ public final class YambaClient {
      * @throws YambaClientException
      */
     public void postStatus(String status, double latitude, double longitude)
-        throws YambaClientException
+            throws YambaClientException
     {
         try {
             HttpPost post = new HttpPost(this.getUri("/statuses/update.xml"));
             List<NameValuePair> postParams = new ArrayList<NameValuePair>(3);
             postParams.add(new BasicNameValuePair("status", status));
-            if ( -90.00 <= latitude && latitude <= 90.00
-                && -180.00 <= longitude && longitude <= 180.00) {
+            if (-90.00 <= latitude && latitude <= 90.00
+                    && -180.00 <= longitude && longitude <= 180.00) {
                 postParams.add(new BasicNameValuePair("lat", String
-                    .valueOf(latitude)));
+                        .valueOf(latitude)));
                 postParams.add(new BasicNameValuePair("long", String
-                    .valueOf(longitude)));
+                        .valueOf(longitude)));
             }
             post.setEntity(new UrlEncodedFormEntity(postParams, HTTP.UTF_8));
             HttpClient client = this.getHttpClient();
             try {
                 Log.d(TAG,
-                    "Submitting " + postParams + " to " + post.getURI());
+                        "Submitting " + postParams + " to " + post.getURI());
                 HttpResponse response = client.execute(post);
                 this.checkResponse(response);
                 HttpEntity entity = response.getEntity();
                 if (entity != null) {
                     entity.consumeContent();
                 }
-            }
-            finally {
+            } finally {
                 client.getConnectionManager().shutdown();
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             throw translateException(e);
         }
     }
@@ -216,9 +216,9 @@ public final class YambaClient {
                 @Override public void onStartProcessingTimeline() { }
                 @Override public void onEndProcessingTimeline() { }
                 @Override public void onTimelineStatus(long id, Date createdAt, String user, String msg) {
-                    statuses.add(new Status(id, createdAt, user, msg));
-                }
-            });
+                statuses.add(new Status(id, createdAt, user, msg));
+            }
+        });
 
         return statuses;
     }
@@ -230,12 +230,12 @@ public final class YambaClient {
      * @throws YambaClientException
      */
     public void fetchFriendsTimeline(TimelineProcessor hdlr)
-        throws YambaClientException
+            throws YambaClientException
     {
         long t = System.currentTimeMillis();
         try {
             HttpGet get = new HttpGet(
-                this.getUri("/statuses/friends_timeline.xml"));
+                    this.getUri("/statuses/friends_timeline.xml"));
             HttpClient client = this.getHttpClient();
             try {
                 Log.d(TAG, "Getting " + get.getURI());
@@ -248,17 +248,16 @@ public final class YambaClient {
 
                 XmlPullParser xpp = this.getXmlPullParser();
                 InputStream in = entity.getContent();
-                try { parseStatus(xpp, in, hdlr); }
-                finally {
+                try {
+                    parseStatus(xpp, in, hdlr);
+                } finally {
                     in.close();
                     entity.consumeContent();
                 }
-            }
-            finally {
+            } finally {
                 client.getConnectionManager().shutdown();
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             throw translateException(e);
         }
         t = System.currentTimeMillis() - t;
@@ -266,7 +265,7 @@ public final class YambaClient {
     }
 
     private void checkResponse(HttpResponse response)
-        throws YambaClientException
+            throws YambaClientException
     {
         int responseCode = response.getStatusLine().getStatusCode();
         String reason = response.getStatusLine().getReasonPhrase();
@@ -277,7 +276,7 @@ public final class YambaClient {
                 throw new YambaClientUnauthorizedException(reason);
             default:
                 throw new YambaClientException("Unexpected response ["
-                    + responseCode + "] while posting update: " + reason);
+                        + responseCode + "] while posting update: " + reason);
         }
     }
 
@@ -285,7 +284,7 @@ public final class YambaClient {
     {
         int s = stack.size();
         return s >= 2 && tag1.equals(stack.get(s - 2))
-            && tag2.equals(stack.get(s - 1));
+                && tag2.equals(stack.get(s - 1));
     }
 
     private HttpClient getHttpClient() {
@@ -296,8 +295,8 @@ public final class YambaClient {
         HttpProtocolParams.setUserAgent(params, DEFAULT_USER_AGENT);
         httpclient.setParams(params);
         httpclient.getCredentialsProvider().setCredentials(
-            new AuthScope(this.apiRootHost, this.apiRootPort),
-            new UsernamePasswordCredentials(this.username, this.password));
+                new AuthScope(this.apiRootHost, this.apiRootPort),
+                new UsernamePasswordCredentials(this.username, this.password));
         return httpclient;
     }
 
@@ -310,14 +309,13 @@ public final class YambaClient {
             XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
             factory.setNamespaceAware(false);
             return factory.newPullParser();
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             throw new YambaClientException("Failed to create parser", e);
         }
     }
 
     private void parseStatus(XmlPullParser xpp, InputStream in, TimelineProcessor hdlr)
-        throws XmlPullParserException, IOException, ParseException
+            throws XmlPullParserException, IOException, ParseException
     {
         SimpleDateFormat dateFormat = new SimpleDateFormat(DATE_FORMAT_PATTERN);
 
@@ -376,15 +374,15 @@ public final class YambaClient {
         }
         else if (e instanceof ConnectTimeoutException) {
             return new YambaClientTimeoutException(
-                "Timeout while communicating to" + this.apiRoot, e);
+                    "Timeout while communicating to" + this.apiRoot, e);
         }
         else if (e instanceof IOException) {
             return new YambaClientIOException(
-                "I/O error while communicating to" + this.apiRoot, e);
+                    "I/O error while communicating to" + this.apiRoot, e);
         }
         else {
             return new YambaClientException(
-                "Unexpected error while communicating to" + this.apiRoot, e);
+                    "Unexpected error while communicating to" + this.apiRoot, e);
         }
     }
 }
