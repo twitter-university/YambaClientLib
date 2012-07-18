@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -28,62 +29,114 @@ import org.apache.http.params.HttpConnectionParams;
 import org.apache.http.params.HttpParams;
 import org.apache.http.params.HttpProtocolParams;
 import org.apache.http.protocol.HTTP;
+
 import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserException;
 import org.xmlpull.v1.XmlPullParserFactory;
 
+import android.text.TextUtils;
 import android.util.Log;
 
+/**
+ * YambaClient
+ */
 public final class YambaClient {
-    private static final String TAG = "YambaClient";
-
-    private static final int DEFAULT_TIMEOUT = 10000;
-
-    private static final String DATE_FORMAT_PATTERN = "EEE MMM dd HH:mm:ss Z yyyy";
-
-    private static final String DEFAULT_USER_AGENT = "YambaClient/1.0";
-
+    /** The default Yamba service */
     public static final String DEFAULT_API_ROOT = "http://yamba.marakana.com/api";
 
-    private String username;
+    /** Created at format */
+    public static final String DATE_FORMAT_PATTERN = "EEE MMM dd HH:mm:ss Z yyyy";
 
-    private String password;
+    private static final String TAG = "YambaClient";
+    private static final int DEFAULT_TIMEOUT = 10000;
+    private static final String DEFAULT_USER_AGENT = "YambaClient/1.0";
 
-    private String apiRoot;
+    /**
+     * TimelineProcessor
+     */
+    public static interface TimelineProcessor {
+        /** @return true if the processor can accept more data */
+        public boolean isRunnable();
 
+        /** Called before the first entry in the timeline */
+        public void onStartProcessingTimeline();
+
+        /** Called after the last entry in the timeline */
+        public void onEndProcessingTimeline();
+
+        /**
+         * @param id the unique id for the status message
+         * @param createdAt creation time for the status message
+         * @param user user posting the status message
+         * @param msg the text of the status message
+         */
+        public void onTimelineStatus(long id, Date createdAt, String user, String msg);
+    }
+
+    /**
+     * Status
+     */
+    public static class Status {
+        private final long id;
+        private final Date createdAt;
+        private final String user;
+        private final String message;
+
+        Status(long id, Date createdAt, String user, String message) {
+            this.id = id;
+            this.createdAt = createdAt;
+            this.user = user;
+            this.message = message;
+        }
+
+        /** @return the record id */
+        public long getId() { return id; }
+
+        /** @return the record creation date */
+        public Date getCreatedAt() { return createdAt; }
+
+        /** @return the record owner */
+        public String getUser() { return user; }
+
+        /** @return the message */
+        public String getMessage() { return message; }
+    }
+
+    private final String username;
+    private final String password;
+    private final String apiRoot;
     private String apiRootHost;
-
     private int apiRootPort;
 
+    /**
+     * Ctor: Create client for default endpoint.
+     *
+     * @param username
+     * @param password
+     */
     public YambaClient(String username, String password) {
-        this(username, password, DEFAULT_API_ROOT);
+        this(username, password, null);
     }
 
+    /**
+     * Full constructor.
+     *
+     * @param username
+     * @param password
+     * @param apiRoot
+     */
     public YambaClient(String username, String password, String apiRoot) {
-        this.setUsername(username);
-        this.setPassword(password);
-        this.setApiRoot(apiRoot);
-    }
-
-    public synchronized void setUsername(String username) throws IllegalArgumentException {
-        if (isBlank(username)) {
+        if (TextUtils.isEmpty(username)) {
             throw new IllegalArgumentException("Username must not be blank");
         }
         this.username = username;
-    }
 
-    public synchronized void setPassword(String password) throws IllegalArgumentException {
-        if (isBlank(password)) {
+        if (TextUtils.isEmpty(password)) {
             throw new IllegalArgumentException("Password must not be blank");
         }
         this.password = password;
-    }
 
-    public String getApiRoot() {
-        return apiRoot;
-    }
-
-    public synchronized void setApiRoot(String apiRoot) throws IllegalArgumentException {
-        if (isBlank(apiRoot)) {
+        if (TextUtils.isEmpty(apiRoot)) {
             apiRoot = DEFAULT_API_ROOT;
         }
         try {
@@ -96,99 +149,43 @@ public final class YambaClient {
         }
     }
 
-    private static boolean isBlank(String s) {
-        return s == null || s.length() == 0;
+    /**
+     * Post status without location.
+     *
+     * @param status
+     * @throws YambaClientException
+     */
+    public void postStatus(String status) throws YambaClientException {
+        postStatus(status, Double.NaN, Double.NaN);
     }
 
-    private boolean endsWithTags(Stack<String> stack, String tag1, String tag2) {
-        int s = stack.size();
-        return s >= 2 && tag1.equals(stack.get(s - 2)) && tag2.equals(stack.get(s - 1));
-    }
-
-    public void fetchFriendsTimeline(TimelineProcessor timelineProcessor) {
-        long t = System.currentTimeMillis();
-        try {
-            HttpGet get = new HttpGet(this.getUri("/statuses/friends_timeline.xml"));
-            HttpClient client = this.getHttpClient();
-            try {
-                Log.d(TAG, "Getting " + get.getURI());
-                HttpResponse response = client.execute(get);
-                this.checkResponse(response);
-                HttpEntity entity = response.getEntity();
-                if (entity == null) {
-                    throw new YambaClientException("No friends update data");
-                } else {
-                    XmlPullParser xpp = this.getXmlPullParser();
-                    InputStream in = entity.getContent();
-                    try {
-                        xpp.setInput(in, "UTF-8");
-                        TimelineStatusImpl status = new TimelineStatusImpl();
-                        Stack<String> stack = new Stack<String>();
-                        SimpleDateFormat dateFormat = new SimpleDateFormat(DATE_FORMAT_PATTERN);
-                        Log.d(TAG, "Parsing timeline");
-                        for (int eventType = xpp.getEventType(); eventType != XmlPullParser.END_DOCUMENT
-                                && timelineProcessor.isRunnable(); eventType = xpp.next()) {
-                            switch (eventType) {
-                                case XmlPullParser.START_DOCUMENT:
-                                    timelineProcessor.onStartProcessingTimeline();
-                                    break;
-                                case XmlPullParser.START_TAG:
-                                    stack.push(xpp.getName());
-                                    break;
-                                case XmlPullParser.END_TAG:
-                                    if ("status".equals(stack.pop())) {
-                                        timelineProcessor.onTimelineStatus(status);
-                                    }
-                                    break;
-                                case XmlPullParser.TEXT:
-                                    String text = xpp.getText();
-                                    if (endsWithTags(stack, "status", "id")) {
-                                        status.id = Long.parseLong(text);
-                                    } else if (endsWithTags(stack, "status", "created_at")) {
-                                        status.createdAt = dateFormat.parse(text);
-                                    } else if (endsWithTags(stack, "status", "text")) {
-                                        status.message = text;
-                                    } else if (endsWithTags(stack, "user", "name")) {
-                                        status.user = text;
-                                    }
-                                    break;
-                            } // switch
-                        } // for
-                        timelineProcessor.onEndProcessingTimeline();
-                        Log.d(TAG, "Finished parsing timeline");
-                    } finally {
-                        in.close();
-                        entity.consumeContent();
-                    }
-                }
-            } finally {
-                client.getConnectionManager().shutdown();
-            }
-        } catch (Exception e) {
-            throw translateException(e);
-        }
-        t = System.currentTimeMillis() - t;
-        Log.d(TAG, "Fetched timeline in " + t + " ms");
-    }
-
-    public void updateStatus(String status) {
-        updateStatus(status, Double.NaN, Double.NaN);
-    }
-
-    public void updateStatus(String status, double latitude, double longitude) {
+    /**
+     * Post status at location.
+     *
+     * @param status
+     * @param latitude
+     * @param longitude
+     * @throws YambaClientException
+     */
+    public void postStatus(String status, double latitude, double longitude)
+            throws YambaClientException
+    {
         try {
             HttpPost post = new HttpPost(this.getUri("/statuses/update.xml"));
             List<NameValuePair> postParams = new ArrayList<NameValuePair>(3);
             postParams.add(new BasicNameValuePair("status", status));
-            if (-90.00 <= latitude && latitude <= 90.00 && -180.00 <= longitude
-                    && longitude <= 180.00) {
-                postParams.add(new BasicNameValuePair("lat", String.valueOf(latitude)));
-                postParams.add(new BasicNameValuePair("long", String.valueOf(longitude)));
+            if (-90.00 <= latitude && latitude <= 90.00
+                    && -180.00 <= longitude && longitude <= 180.00) {
+                postParams.add(new BasicNameValuePair("lat", String
+                        .valueOf(latitude)));
+                postParams.add(new BasicNameValuePair("long", String
+                        .valueOf(longitude)));
             }
             post.setEntity(new UrlEncodedFormEntity(postParams, HTTP.UTF_8));
             HttpClient client = this.getHttpClient();
             try {
-                Log.d(TAG, "Submitting " + postParams + " to " + post.getURI());
+                Log.d(TAG,
+                        "Submitting " + postParams + " to " + post.getURI());
                 HttpResponse response = client.execute(post);
                 this.checkResponse(response);
                 HttpEntity entity = response.getEntity();
@@ -203,7 +200,73 @@ public final class YambaClient {
         }
     }
 
-    private void checkResponse(HttpResponse response) {
+    /**
+     * Convenience method to get a list of recent statuses.
+     *
+     * @param maxPosts max on length of the timeline
+     * @return a list of Status objects
+     * @throws YambaClientException
+     */
+    public List<Status> getTimeline(final int maxPosts) throws YambaClientException {
+        final List<Status> statuses = new ArrayList<Status>();
+
+        fetchFriendsTimeline(
+            new TimelineProcessor() {
+                @Override public boolean isRunnable() { return statuses.size() <= maxPosts; }
+                @Override public void onStartProcessingTimeline() { }
+                @Override public void onEndProcessingTimeline() { }
+                @Override public void onTimelineStatus(long id, Date createdAt, String user, String msg) {
+                statuses.add(new Status(id, createdAt, user, msg));
+            }
+        });
+
+        return statuses;
+    }
+
+    /**
+     * Fetch the friends timeline.
+     *
+     * @param hdlr callback handler for each status
+     * @throws YambaClientException
+     */
+    public void fetchFriendsTimeline(TimelineProcessor hdlr)
+            throws YambaClientException
+    {
+        long t = System.currentTimeMillis();
+        try {
+            HttpGet get = new HttpGet(
+                    this.getUri("/statuses/friends_timeline.xml"));
+            HttpClient client = this.getHttpClient();
+            try {
+                Log.d(TAG, "Getting " + get.getURI());
+                HttpResponse response = client.execute(get);
+                this.checkResponse(response);
+                HttpEntity entity = response.getEntity();
+                if (entity == null) {
+                    throw new YambaClientException("No friends update data");
+                }
+
+                XmlPullParser xpp = this.getXmlPullParser();
+                InputStream in = entity.getContent();
+                try {
+                    parseStatus(xpp, in, hdlr);
+                } finally {
+                    in.close();
+                    entity.consumeContent();
+                }
+            } finally {
+                client.getConnectionManager().shutdown();
+            }
+        } catch (Exception e) {
+            throw translateException(e);
+        }
+        t = System.currentTimeMillis() - t;
+        Log.d(TAG, "Fetched timeline in " + t + " ms");
+    }
+
+    private void checkResponse(HttpResponse response)
+            throws YambaClientException
+    {
         int responseCode = response.getStatusLine().getStatusCode();
         String reason = response.getStatusLine().getReasonPhrase();
         switch (responseCode) {
@@ -212,23 +275,16 @@ public final class YambaClient {
             case 401:
                 throw new YambaClientUnauthorizedException(reason);
             default:
-                throw new YambaClientException("Unexpected response [" + responseCode
-                        + "] while posting update: " + reason);
+                throw new YambaClientException("Unexpected response ["
+                        + responseCode + "] while posting update: " + reason);
         }
     }
 
-    private YambaClientException translateException(Exception e) {
-        if (e instanceof YambaClientException) {
-            return (YambaClientException)e;
-        } else if (e instanceof ConnectTimeoutException) {
-            return new YambaClientTimeoutException("Timeout while communicating to" + this.apiRoot,
-                    e);
-        } else if (e instanceof IOException) {
-            return new YambaClientIOException("I/O error while communicating to" + this.apiRoot, e);
-        } else {
-            return new YambaClientException("Unexpected error while communicating to"
-                    + this.apiRoot, e);
-        }
+    private boolean endsWithTags(Stack<String> stack, String tag1, String tag2)
+    {
+        int s = stack.size();
+        return s >= 2 && tag1.equals(stack.get(s - 2))
+                && tag2.equals(stack.get(s - 1));
     }
 
     private HttpClient getHttpClient() {
@@ -244,7 +300,11 @@ public final class YambaClient {
         return httpclient;
     }
 
-    private XmlPullParser getXmlPullParser() {
+    private String getUri(String relativePath) {
+        return apiRoot + relativePath;
+    }
+
+    private XmlPullParser getXmlPullParser() throws YambaClientException {
         try {
             XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
             factory.setNamespaceAware(false);
@@ -254,53 +314,75 @@ public final class YambaClient {
         }
     }
 
-    private String getUri(String relativePath) {
-        return apiRoot + relativePath;
+    private void parseStatus(XmlPullParser xpp, InputStream in, TimelineProcessor hdlr)
+            throws XmlPullParserException, IOException, ParseException
+    {
+        SimpleDateFormat dateFormat = new SimpleDateFormat(DATE_FORMAT_PATTERN);
+
+        long id = -1;
+        Date createdAt = null;
+        String user = null;
+        String message = null;
+
+        xpp.setInput(in, "UTF-8");
+        Stack<String> stack = new Stack<String>();
+        Log.d(TAG, "Parsing timeline");
+        for (int eventType = xpp.getEventType();
+            eventType != XmlPullParser.END_DOCUMENT && hdlr.isRunnable();
+            eventType = xpp.next())
+        {
+            switch (eventType) {
+                case XmlPullParser.START_DOCUMENT:
+                    hdlr.onStartProcessingTimeline();
+                    break;
+                case XmlPullParser.START_TAG:
+                    stack.push(xpp.getName());
+                    break;
+                case XmlPullParser.END_TAG:
+                    if ("status".equals(stack.pop())) {
+                        hdlr.onTimelineStatus(id, createdAt, user, message);
+                        id = -1;
+                        createdAt = null;
+                        user = null;
+                        message = null;
+                    }
+                    break;
+                case XmlPullParser.TEXT:
+                    String text = xpp.getText();
+                    if (endsWithTags(stack, "status", "id")) {
+                        id = Long.parseLong(text);
+                    }
+                    else if (endsWithTags(stack, "status", "created_at")) {
+                        createdAt = dateFormat.parse(text);
+                    }
+                    else if (endsWithTags(stack, "status", "text")) {
+                        message = text;
+                    }
+                    else if (endsWithTags(stack, "user", "name")) {
+                        user = text;
+                    }
+                    break;
+            } // switch
+        } // for
+        hdlr.onEndProcessingTimeline();
+        Log.d(TAG, "Finished parsing timeline");
     }
 
-    private static final class TimelineStatusImpl implements TimelineStatus {
-        private long id;
-
-        private Date createdAt;
-
-        private String message;
-
-        private String user;
-
-        public long getId() {
-            return id;
+    private YambaClientException translateException(Exception e) {
+        if (e instanceof YambaClientException) {
+            return (YambaClientException) e;
         }
-
-        public Date getCreatedAt() {
-            return createdAt;
+        else if (e instanceof ConnectTimeoutException) {
+            return new YambaClientTimeoutException(
+                    "Timeout while communicating to" + this.apiRoot, e);
         }
-
-        public String getMessage() {
-            return message;
+        else if (e instanceof IOException) {
+            return new YambaClientIOException(
+                    "I/O error while communicating to" + this.apiRoot, e);
         }
-
-        public String getUser() {
-            return user;
+        else {
+            return new YambaClientException(
+                    "Unexpected error while communicating to" + this.apiRoot, e);
         }
-    }
-
-    public static interface TimelineStatus {
-        public long getId();
-
-        public Date getCreatedAt();
-
-        public String getMessage();
-
-        public String getUser();
-    }
-
-    public static interface TimelineProcessor {
-        public void onStartProcessingTimeline();
-
-        public void onTimelineStatus(TimelineStatus timelineStatus);
-
-        public boolean isRunnable();
-
-        public void onEndProcessingTimeline();
     }
 }
