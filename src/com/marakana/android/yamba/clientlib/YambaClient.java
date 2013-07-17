@@ -29,11 +29,11 @@ import org.apache.http.params.HttpConnectionParams;
 import org.apache.http.params.HttpParams;
 import org.apache.http.params.HttpProtocolParams;
 import org.apache.http.protocol.HTTP;
-
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 import org.xmlpull.v1.XmlPullParserFactory;
 
+import android.annotation.SuppressLint;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -48,7 +48,9 @@ public final class YambaClient {
     public static final String DATE_FORMAT_PATTERN = "EEE MMM dd HH:mm:ss Z yyyy";
 
     private static final String TAG = "YambaClient";
+
     private static final int DEFAULT_TIMEOUT = 10000;
+
     private static final String DEFAULT_USER_AGENT = "YambaClient/1.0";
 
     /**
@@ -65,12 +67,9 @@ public final class YambaClient {
         public void onEndProcessingTimeline();
 
         /**
-         * @param id the unique id for the status message
-         * @param createdAt creation time for the status message
-         * @param user user posting the status message
-         * @param msg the text of the status message
+         * @param status the status
          */
-        public void onTimelineStatus(long id, Date createdAt, String user, String msg);
+        public void onTimelineStatus(Status status);
     }
 
     /**
@@ -78,39 +77,80 @@ public final class YambaClient {
      */
     public static class Status {
         private final long id;
+
         private final Date createdAt;
+
         private final String user;
+
         private final String message;
 
-        Status(long id, Date createdAt, String user, String message) {
+        private final double latitude;
+
+        private final double longitude;
+
+        Status(long id, Date createdAt, String user, String message, double latitude,
+                double longitude) {
             this.id = id;
             this.createdAt = createdAt;
             this.user = user;
             this.message = message;
+            this.latitude = latitude;
+            this.longitude = longitude;
+        }
+
+        Status(long id, Date createdAt, String user, String message) {
+            this(id, createdAt, user, message, Double.NaN, Double.NaN);
         }
 
         /** @return the record id */
-        public long getId() { return id; }
+        public long getId() {
+            return id;
+        }
 
         /** @return the record creation date */
-        public Date getCreatedAt() { return createdAt; }
+        public Date getCreatedAt() {
+            return createdAt;
+        }
 
         /** @return the record owner */
-        public String getUser() { return user; }
+        public String getUser() {
+            return user;
+        }
 
         /** @return the message */
-        public String getMessage() { return message; }
+        public String getMessage() {
+            return message;
+        }
+
+        public double getLatitude() {
+            return this.latitude;
+        }
+
+        public double getLongitude() {
+            return this.longitude;
+        }
+
+        @Override
+        public String toString() {
+            return "Status [id=" + this.id + ", createdAt=" + this.createdAt + ", user="
+                    + this.user + ", message=" + this.message + ", latitude=" + this.latitude
+                    + ", longitude=" + this.longitude + "]";
+        }
     }
 
     private final String username;
+
     private final String password;
+
     private final String apiRoot;
+
     private String apiRootHost;
+
     private int apiRootPort;
 
     /**
      * Ctor: Create client for default endpoint.
-     *
+     * 
      * @param username
      * @param password
      */
@@ -120,7 +160,7 @@ public final class YambaClient {
 
     /**
      * Full constructor.
-     *
+     * 
      * @param username
      * @param password
      * @param apiRoot
@@ -151,7 +191,7 @@ public final class YambaClient {
 
     /**
      * Post status without location.
-     *
+     * 
      * @param status
      * @throws YambaClientException
      */
@@ -161,31 +201,27 @@ public final class YambaClient {
 
     /**
      * Post status at location.
-     *
+     * 
      * @param status
      * @param latitude
      * @param longitude
      * @throws YambaClientException
      */
     public void postStatus(String status, double latitude, double longitude)
-            throws YambaClientException
-    {
+            throws YambaClientException {
         try {
             HttpPost post = new HttpPost(this.getUri("/statuses/update.xml"));
             List<NameValuePair> postParams = new ArrayList<NameValuePair>(3);
             postParams.add(new BasicNameValuePair("status", status));
-            if (-90.00 <= latitude && latitude <= 90.00
-                    && -180.00 <= longitude && longitude <= 180.00) {
-                postParams.add(new BasicNameValuePair("lat", String
-                        .valueOf(latitude)));
-                postParams.add(new BasicNameValuePair("long", String
-                        .valueOf(longitude)));
+            if (-90.00 <= latitude && latitude <= 90.00 && -180.00 <= longitude
+                    && longitude <= 180.00) {
+                postParams.add(new BasicNameValuePair("lat", String.valueOf(latitude)));
+                postParams.add(new BasicNameValuePair("long", String.valueOf(longitude)));
             }
             post.setEntity(new UrlEncodedFormEntity(postParams, HTTP.UTF_8));
             HttpClient client = this.getHttpClient();
             try {
-                Log.d(TAG,
-                        "Submitting " + postParams + " to " + post.getURI());
+                Log.d(TAG, "Submitting " + postParams + " to " + post.getURI());
                 HttpResponse response = client.execute(post);
                 this.checkResponse(response);
                 HttpEntity entity = response.getEntity();
@@ -202,7 +238,7 @@ public final class YambaClient {
 
     /**
      * Convenience method to get a list of recent statuses.
-     *
+     * 
      * @param maxPosts max on length of the timeline
      * @return a list of Status objects
      * @throws YambaClientException
@@ -210,13 +246,23 @@ public final class YambaClient {
     public List<Status> getTimeline(final int maxPosts) throws YambaClientException {
         final List<Status> statuses = new ArrayList<Status>();
 
-        fetchFriendsTimeline(
-            new TimelineProcessor() {
-                @Override public boolean isRunnable() { return statuses.size() <= maxPosts; }
-                @Override public void onStartProcessingTimeline() { }
-                @Override public void onEndProcessingTimeline() { }
-                @Override public void onTimelineStatus(long id, Date createdAt, String user, String msg) {
-                statuses.add(new Status(id, createdAt, user, msg));
+        fetchFriendsTimeline(new TimelineProcessor() {
+            @Override
+            public boolean isRunnable() {
+                return statuses.size() <= maxPosts;
+            }
+
+            @Override
+            public void onStartProcessingTimeline() {
+            }
+
+            @Override
+            public void onEndProcessingTimeline() {
+            }
+
+            @Override
+            public void onTimelineStatus(Status status) {
+                statuses.add(status);
             }
         });
 
@@ -225,17 +271,14 @@ public final class YambaClient {
 
     /**
      * Fetch the friends timeline.
-     *
+     * 
      * @param hdlr callback handler for each status
      * @throws YambaClientException
      */
-    public void fetchFriendsTimeline(TimelineProcessor hdlr)
-            throws YambaClientException
-    {
+    public void fetchFriendsTimeline(TimelineProcessor hdlr) throws YambaClientException {
         long t = System.currentTimeMillis();
         try {
-            HttpGet get = new HttpGet(
-                    this.getUri("/statuses/friends_timeline.xml"));
+            HttpGet get = new HttpGet(this.getUri("/statuses/friends_timeline.xml"));
             HttpClient client = this.getHttpClient();
             try {
                 Log.d(TAG, "Getting " + get.getURI());
@@ -264,9 +307,7 @@ public final class YambaClient {
         Log.d(TAG, "Fetched timeline in " + t + " ms");
     }
 
-    private void checkResponse(HttpResponse response)
-            throws YambaClientException
-    {
+    private void checkResponse(HttpResponse response) throws YambaClientException {
         int responseCode = response.getStatusLine().getStatusCode();
         String reason = response.getStatusLine().getReasonPhrase();
         switch (responseCode) {
@@ -275,16 +316,14 @@ public final class YambaClient {
             case 401:
                 throw new YambaClientUnauthorizedException(reason);
             default:
-                throw new YambaClientException("Unexpected response ["
-                        + responseCode + "] while posting update: " + reason);
+                throw new YambaClientException("Unexpected response [" + responseCode
+                        + "] while posting update: " + reason);
         }
     }
 
-    private boolean endsWithTags(Stack<String> stack, String tag1, String tag2)
-    {
+    private boolean endsWithTags(Stack<String> stack, String tag1, String tag2) {
         int s = stack.size();
-        return s >= 2 && tag1.equals(stack.get(s - 2))
-                && tag2.equals(stack.get(s - 1));
+        return s >= 2 && tag1.equals(stack.get(s - 2)) && tag2.equals(stack.get(s - 1));
     }
 
     private HttpClient getHttpClient() {
@@ -314,23 +353,23 @@ public final class YambaClient {
         }
     }
 
+    @SuppressLint("SimpleDateFormat")
     private void parseStatus(XmlPullParser xpp, InputStream in, TimelineProcessor hdlr)
-            throws XmlPullParserException, IOException, ParseException
-    {
+            throws XmlPullParserException, IOException, ParseException {
         SimpleDateFormat dateFormat = new SimpleDateFormat(DATE_FORMAT_PATTERN);
 
         long id = -1;
         Date createdAt = null;
         String user = null;
         String message = null;
+        double latitude = Double.NaN;
+        double longitude = Double.NaN;
 
         xpp.setInput(in, "UTF-8");
         Stack<String> stack = new Stack<String>();
         Log.d(TAG, "Parsing timeline");
-        for (int eventType = xpp.getEventType();
-            eventType != XmlPullParser.END_DOCUMENT && hdlr.isRunnable();
-            eventType = xpp.next())
-        {
+        for (int eventType = xpp.getEventType(); eventType != XmlPullParser.END_DOCUMENT
+                && hdlr.isRunnable(); eventType = xpp.next()) {
             switch (eventType) {
                 case XmlPullParser.START_DOCUMENT:
                     hdlr.onStartProcessingTimeline();
@@ -339,27 +378,42 @@ public final class YambaClient {
                     stack.push(xpp.getName());
                     break;
                 case XmlPullParser.END_TAG:
-                    if ("status".equals(stack.pop())) {
-                        hdlr.onTimelineStatus(id, createdAt, user, message);
+                    String tag = stack.pop();
+                    if ("status".equals(tag)) {
+                        hdlr.onTimelineStatus(new Status(id, createdAt, user, message, latitude,
+                                longitude));
                         id = -1;
                         createdAt = null;
                         user = null;
                         message = null;
+                        latitude = Double.NaN;
+                        longitude = Double.NaN;
                     }
                     break;
                 case XmlPullParser.TEXT:
                     String text = xpp.getText();
                     if (endsWithTags(stack, "status", "id")) {
                         id = Long.parseLong(text);
-                    }
-                    else if (endsWithTags(stack, "status", "created_at")) {
+                    } else if (endsWithTags(stack, "status", "created_at")) {
                         createdAt = dateFormat.parse(text);
-                    }
-                    else if (endsWithTags(stack, "status", "text")) {
+                    } else if (endsWithTags(stack, "status", "text")) {
                         message = text;
-                    }
-                    else if (endsWithTags(stack, "user", "name")) {
+                    } else if (endsWithTags(stack, "user", "name")) {
                         user = text;
+                    } else if (endsWithTags(stack, "geo", "georss:point")) {
+                        int space = text.indexOf(' ');
+                        if (space == -1) {
+                            Log.w(TAG, "Ignoring malformed latitude/longitude on status " + id
+                                    + ": " + text);
+                        } else {
+                            try {
+                                latitude = Double.parseDouble(text.substring(0, space));
+                                longitude = Double.parseDouble(text.substring(space + 1));
+                            } catch (NumberFormatException e) {
+                                Log.w(TAG, "Ignoring unparsable latitude/longitude on status " + id
+                                        + ": " + text, e);
+                            }
+                        }
                     }
                     break;
             } // switch
@@ -371,18 +425,14 @@ public final class YambaClient {
     private YambaClientException translateException(Exception e) {
         if (e instanceof YambaClientException) {
             return (YambaClientException) e;
-        }
-        else if (e instanceof ConnectTimeoutException) {
-            return new YambaClientTimeoutException(
-                    "Timeout while communicating to" + this.apiRoot, e);
-        }
-        else if (e instanceof IOException) {
-            return new YambaClientIOException(
-                    "I/O error while communicating to" + this.apiRoot, e);
-        }
-        else {
-            return new YambaClientException(
-                    "Unexpected error while communicating to" + this.apiRoot, e);
+        } else if (e instanceof ConnectTimeoutException) {
+            return new YambaClientTimeoutException("Timeout while communicating to" + this.apiRoot,
+                    e);
+        } else if (e instanceof IOException) {
+            return new YambaClientIOException("I/O error while communicating to" + this.apiRoot, e);
+        } else {
+            return new YambaClientException("Unexpected error while communicating to"
+                    + this.apiRoot, e);
         }
     }
 }
