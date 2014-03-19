@@ -10,6 +10,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Stack;
 
 import org.apache.http.HttpEntity;
@@ -317,7 +318,7 @@ public final class YambaClient {
     private void parseStatus(XmlPullParser xpp, InputStream in, TimelineProcessor hdlr)
             throws XmlPullParserException, IOException, ParseException
     {
-        SimpleDateFormat dateFormat = new SimpleDateFormat(DATE_FORMAT_PATTERN);
+        SimpleDateFormat dateFormat = new SimpleDateFormat(DATE_FORMAT_PATTERN, Locale.US);
 
         long id = -1;
         Date createdAt = null;
