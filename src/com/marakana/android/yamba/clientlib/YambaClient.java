@@ -42,7 +42,7 @@ import android.util.Log;
  */
 public final class YambaClient {
     /** The default Yamba service */
-    public static final String DEFAULT_API_ROOT = "http://yamba.marakana.com/api";
+    public static final String DEFAULT_API_ROOT = "http://yamba.newcircle.com/api";
 
     /** Created at format */
     public static final String DATE_FORMAT_PATTERN = "EEE MMM dd HH:mm:ss Z yyyy";
@@ -187,6 +187,10 @@ public final class YambaClient {
                 Log.d(TAG,
                         "Submitting " + postParams + " to " + post.getURI());
                 HttpResponse response = client.execute(post);
+                
+                Log.d(TAG,
+                        "Response " + response + ", code: " + response.getStatusLine().getStatusCode());
+                
                 this.checkResponse(response);
                 HttpEntity entity = response.getEntity();
                 if (entity != null) {
