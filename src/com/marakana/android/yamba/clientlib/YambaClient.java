@@ -10,6 +10,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Stack;
 
 import org.apache.http.HttpEntity;
@@ -244,14 +245,24 @@ public final class YambaClient {
             try {
                 Log.d(TAG, "Getting " + get.getURI());
                 HttpResponse response = client.execute(get);
+                
+                Log.d(TAG, "Response " + response.toString());
                 this.checkResponse(response);
+                
+                
                 HttpEntity entity = response.getEntity();
+                
+                
                 if (entity == null) {
                     throw new YambaClientException("No friends update data");
                 }
+                
+                Log.d(TAG, "Entity " + entity.toString());
 
                 XmlPullParser xpp = this.getXmlPullParser();
                 InputStream in = entity.getContent();
+                
+                Log.d(TAG, "Content " + in);
                 try {
                     parseStatus(xpp, in, hdlr);
                 } finally {
@@ -321,7 +332,7 @@ public final class YambaClient {
     private void parseStatus(XmlPullParser xpp, InputStream in, TimelineProcessor hdlr)
             throws XmlPullParserException, IOException, ParseException
     {
-        SimpleDateFormat dateFormat = new SimpleDateFormat(DATE_FORMAT_PATTERN);
+        SimpleDateFormat dateFormat = new SimpleDateFormat(DATE_FORMAT_PATTERN, Locale.ENGLISH);
 
         long id = -1;
         Date createdAt = null;
